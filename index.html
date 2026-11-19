@@ -1,0 +1,1317 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Wally</title>
+<meta name="description" content="Wally – track income, expenses and budgets in RM">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Wally">
+<meta name="theme-color" content="#f4f5f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#111214" media="(prefers-color-scheme: dark)">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-192.png">
+<style>
+  :root {
+    color-scheme: light;
+    --bg: #f4f5f7; --card: #ffffff; --text: #16181d; --muted: #6b7280;
+    --line: #e5e7eb; --accent: #2563eb; --income: #16a34a; --expense: #dc2626;
+    --chip: #eef0f3; --shadow: 0 1px 3px rgba(0,0,0,.06), 0 4px 16px rgba(0,0,0,.04);
+    /* chart series (validated reference palette, slots 1–2) */
+    --s1: #2a78d6; --s2: #eb6834; --grid: #e7e7e3;
+    /* status (reserved for budget state, always shown with icon + label) */
+    --good: #0ca30c; --warn: #fab219; --crit: #d03b3b;
+    --tabbar-h: 62px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --bg: #111214; --card: #1c1d21; --text: #f3f4f6; --muted: #9ca3af;
+      --line: #2c2e33; --accent: #60a5fa; --income: #4ade80; --expense: #f87171;
+      --chip: #26282d; --shadow: none;
+      --s1: #3987e5; --s2: #d95926; --grid: #2f302d;
+    }
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; background: var(--bg); color: var(--text); }
+  body {
+    font: 16px/1.4 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
+    min-height: 100vh;
+  }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  input, select, textarea { font-size: 16px; } /* stops iOS zoom on focus */
+  .hidden { display: none !important; }
+  .num { font-variant-numeric: tabular-nums; }
+  .wrap { max-width: 520px; margin: 0 auto; padding: 12px 16px calc(var(--tabbar-h) + 100px + env(safe-area-inset-bottom)); }
+
+  /* ---------- Auth ---------- */
+  .auth { max-width: 400px; margin: 0 auto; padding: 48px 20px; }
+  .logo { width: 64px; height: 64px; border-radius: 18px; background: var(--accent);
+    display: grid; place-items: center; color: #fff; font-weight: 800; font-size: 30px; margin-bottom: 20px; }
+  .auth h1 { margin: 0 0 6px; font-size: 28px; }
+  .auth p.sub { margin: 0 0 28px; color: var(--muted); }
+  .field { margin-bottom: 14px; }
+  .field label { display: block; font-size: 14px; color: var(--muted); margin-bottom: 6px; }
+  .field input, .field select {
+    width: 100%; padding: 13px 14px; border: 1px solid var(--line); border-radius: 12px;
+    background: var(--card); outline: none;
+  }
+  .field input:focus, .field select:focus { border-color: var(--accent); }
+  .check { display: flex; align-items: center; gap: 8px; margin: 4px 0 20px; color: var(--muted); font-size: 15px; }
+  .check input { width: 18px; height: 18px; }
+  .btn { width: 100%; padding: 14px; border: 0; border-radius: 12px; background: var(--accent);
+    color: #fff; font-weight: 600; cursor: pointer; min-height: 48px; }
+  .btn:active { opacity: .85; }
+  .btn.ghost { background: transparent; color: var(--accent); }
+  .btn.danger { background: transparent; color: var(--expense); }
+  .btn.soft { background: var(--chip); color: var(--text); }
+  .err { color: var(--expense); font-size: 14px; min-height: 20px; margin-bottom: 8px; }
+  .note { font-size: 13px; color: var(--muted); margin-top: 24px; }
+
+  /* ---------- Header ---------- */
+  .top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  .top h2 { margin: 0; font-size: 28px; letter-spacing: -.3px; }
+  .top .hi { color: var(--muted); font-size: 14px; }
+  .icon-btn { border: 0; background: var(--chip); border-radius: 50%; width: 40px; height: 40px;
+    display: grid; place-items: center; cursor: pointer; }
+  .month { display: flex; align-items: center; justify-content: space-between;
+    background: var(--card); border-radius: 14px; padding: 6px; margin-bottom: 14px; box-shadow: var(--shadow); }
+  .month span { font-weight: 600; }
+  .month button { border: 0; background: transparent; width: 44px; height: 40px; border-radius: 10px;
+    font-size: 22px; cursor: pointer; color: var(--accent); }
+
+  /* ---------- Cards ---------- */
+  .card { background: var(--card); border-radius: 18px; padding: 16px; box-shadow: var(--shadow); margin-bottom: 14px; }
+  .card h3 { margin: 0 0 12px; font-size: 16px; display: flex; justify-content: space-between; align-items: baseline; }
+  .card h3 .link { font-size: 14px; font-weight: 500; color: var(--accent); background: none; border: 0; cursor: pointer; padding: 0; }
+  .sub { color: var(--muted); font-size: 13px; }
+  .hero .label { color: var(--muted); font-size: 14px; }
+  .hero .amt { font-size: 36px; font-weight: 700; letter-spacing: -.6px; margin: 2px 0 14px; }
+  .split { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .split div { background: var(--chip); border-radius: 12px; padding: 10px; min-width: 0; }
+  .split small { color: var(--muted); display: block; font-size: 12px; }
+  .split b { font-size: 14px; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sync { border: 0; background: var(--chip); color: var(--muted); border-radius: 999px; padding: 7px 11px;
+    font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; min-height: 32px; }
+  .sync.ok { color: var(--income); } .sync.error { color: var(--expense); }
+  .mrows { background: var(--chip); border-radius: 12px; padding: 10px 12px; }
+  .mrows .row-between { padding: 4px 0; font-size: 15px; }
+  .mrows .net { border-top: 1px solid var(--line); margin-top: 4px; padding-top: 8px; font-weight: 600; }
+  .inc { color: var(--income); } .exp { color: var(--expense); }
+  .empty { color: var(--muted); text-align: center; padding: 20px 0; font-size: 15px; }
+
+  /* progress + status */
+  .prog { height: 10px; background: var(--chip); border-radius: 5px; overflow: hidden; margin: 8px 0 6px; }
+  .prog i { display: block; height: 100%; border-radius: 5px; }
+  .prog.thin { height: 7px; margin: 6px 0 4px; }
+  .st-good { background: var(--good); } .st-warn { background: var(--warn); } .st-crit { background: var(--crit); }
+  .badge { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 600;
+    padding: 3px 8px; border-radius: 999px; background: var(--chip); white-space: nowrap; }
+  .badge::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+  .badge.good::before { background: var(--good); } .badge.warn::before { background: var(--warn); } .badge.crit::before { background: var(--crit); }
+  .row-between { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .big { font-size: 24px; font-weight: 700; }
+
+  .alert { display: flex; gap: 10px; align-items: flex-start; padding: 12px; border-radius: 14px;
+    background: var(--card); box-shadow: var(--shadow); margin-bottom: 8px; border-left: 4px solid var(--warn); font-size: 14px; }
+  .alert.crit { border-left-color: var(--crit); }
+  .alert b { display: block; font-size: 15px; }
+
+  /* budget rows */
+  .brow { padding: 12px 0; border-top: 1px solid var(--line); }
+  .brow:first-of-type { border-top: 0; padding-top: 0; }
+  .brow .name { font-weight: 600; font-size: 15px; }
+  .brow .meta { display: flex; justify-content: space-between; font-size: 13px; color: var(--muted); }
+
+  /* insights */
+  .ins { display: flex; gap: 12px; padding: 12px 0; border-top: 1px solid var(--line); font-size: 15px; }
+  .ins:first-of-type { border-top: 0; padding-top: 0; }
+  .ins .ic { font-size: 20px; line-height: 1.2; flex: none; }
+  .cmp { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .cmp > div { background: var(--chip); border-radius: 12px; padding: 12px; }
+  .cmp .delta { font-size: 22px; font-weight: 700; margin: 2px 0; }
+  .bar-row { margin-bottom: 12px; }
+  .bar-row .lbl { display: flex; justify-content: space-between; font-size: 14px; margin-bottom: 4px; gap: 8px; }
+  .bar-row .lbl span:last-child { color: var(--muted); white-space: nowrap; }
+  .bar { height: 8px; background: var(--chip); border-radius: 4px; overflow: hidden; }
+  .bar i { display: block; height: 100%; background: var(--s2); border-radius: 4px; }
+
+  /* chart */
+  .chart { position: relative; }
+  .chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+  .chart .tip { position: absolute; top: 0; transform: translateX(-50%); background: var(--text); color: var(--bg);
+    padding: 8px 10px; border-radius: 10px; font-size: 13px; pointer-events: none; white-space: nowrap; z-index: 2;
+    box-shadow: 0 4px 14px rgba(0,0,0,.2); }
+  .chart .tip .r { display: flex; align-items: center; gap: 6px; }
+  .chart .tip .sw { width: 8px; height: 8px; border-radius: 2px; }
+  .legend { display: flex; gap: 14px; font-size: 13px; color: var(--muted); margin-bottom: 8px; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+  details.tbl { margin-top: 8px; font-size: 13px; color: var(--muted); }
+  details.tbl summary { cursor: pointer; }
+  details.tbl table { width: 100%; border-collapse: collapse; margin-top: 6px; color: var(--text); }
+  details.tbl td, details.tbl th { text-align: right; padding: 4px 2px; border-bottom: 1px solid var(--line); font-weight: 500; }
+  details.tbl td:first-child, details.tbl th:first-child { text-align: left; }
+
+  /* transactions */
+  .seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; background: var(--chip); border-radius: 12px; padding: 4px; margin-bottom: 14px; }
+  .seg button { border: 0; background: transparent; padding: 9px; border-radius: 9px; font-weight: 600; cursor: pointer; color: var(--muted); }
+  .seg button.on { background: var(--card); color: var(--text); box-shadow: var(--shadow); }
+  .day { font-size: 13px; color: var(--muted); margin: 14px 4px 6px; font-weight: 600; }
+  .tx { display: flex; align-items: center; gap: 12px; padding: 12px; background: var(--card);
+    border-radius: 14px; margin-bottom: 6px; cursor: pointer; box-shadow: var(--shadow); }
+  .card .tx { box-shadow: none; padding: 10px 0; margin: 0; border-radius: 0; border-top: 1px solid var(--line); }
+  .card .tx:first-of-type { border-top: 0; }
+  .tx .ic { width: 40px; height: 40px; border-radius: 12px; background: var(--chip);
+    display: grid; place-items: center; font-size: 20px; flex: none; }
+  .tx .mid { flex: 1; min-width: 0; }
+  .tx .mid b { display: block; font-weight: 600; font-size: 15px; }
+  .tx .mid small { color: var(--muted); display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tx .val { font-weight: 600; white-space: nowrap; }
+
+  /* tab bar + fab */
+  .tabbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 5; background: var(--card);
+    border-top: 1px solid var(--line); display: grid; grid-template-columns: repeat(4, 1fr);
+    padding-bottom: env(safe-area-inset-bottom); }
+  .tabbar button { border: 0; background: none; height: var(--tabbar-h); display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 3px; font-size: 11px; font-weight: 600; color: var(--muted); cursor: pointer; }
+  .tabbar button svg { width: 24px; height: 24px; }
+  .tabbar button.on { color: var(--accent); }
+  .fab { position: fixed; z-index: 6; right: max(20px, env(safe-area-inset-right));
+    bottom: calc(var(--tabbar-h) + 16px + env(safe-area-inset-bottom));
+    width: 58px; height: 58px; border-radius: 50%; border: 0; background: var(--accent); color: #fff;
+    font-size: 32px; line-height: 1; box-shadow: 0 6px 20px rgba(37,99,235,.4); cursor: pointer; }
+
+  /* toast */
+  .toast { position: fixed; left: 50%; top: calc(12px + env(safe-area-inset-top)); transform: translateX(-50%);
+    width: min(92vw, 480px); z-index: 30; background: var(--card); color: var(--text); border-radius: 14px;
+    padding: 12px 14px; box-shadow: 0 10px 30px rgba(0,0,0,.25); border-left: 4px solid var(--warn); font-size: 14px;
+    animation: drop .25s ease-out; }
+  .toast.crit { border-left-color: var(--crit); }
+  .toast b { display: block; font-size: 15px; }
+  @keyframes drop { from { transform: translate(-50%, -30px); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
+
+  /* sheets */
+  .backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 10; }
+  .sheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 11; background: var(--bg);
+    border-radius: 20px 20px 0 0; max-height: 92vh; overflow-y: auto;
+    padding: 10px 16px calc(20px + env(safe-area-inset-bottom)); max-width: 560px; margin: 0 auto;
+    animation: up .22s ease-out; }
+  @keyframes up { from { transform: translateY(100%); } to { transform: none; } }
+  .grab { width: 40px; height: 5px; background: var(--line); border-radius: 3px; margin: 0 auto 12px; }
+  .sheet h3 { margin: 0 0 14px; font-size: 20px; }
+  .money-in { position: relative; }
+  .money-in span { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--muted); font-weight: 600; }
+  .money-in input { padding-left: 46px !important; }
+  .money-in.lg input { font-size: 22px; font-weight: 600; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chips button { border: 1px solid var(--line); background: var(--card); border-radius: 999px;
+    padding: 8px 12px; cursor: pointer; font-size: 14px; min-height: 40px; }
+  .chips button.on { border-color: var(--accent); background: var(--accent); color: #fff; }
+  .row-btns { display: grid; gap: 8px; margin-top: 18px; }
+  .menu-item { display: block; width: 100%; text-align: left; border: 0; background: var(--card);
+    padding: 15px 16px; border-radius: 12px; margin-bottom: 8px; cursor: pointer; }
+  .bfield { display: grid; grid-template-columns: 1fr 150px; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .bfield label { font-size: 15px; }
+  .bfield .field { margin: 0; }
+</style>
+</head>
+<body>
+
+<!-- ============ LOGIN / REGISTER ============ -->
+<section id="setupView" class="auth hidden">
+  <div class="logo">W</div>
+  <h1>Connect your Google Sheet</h1>
+  <p class="sub">Paste the Web app link from your Wally Apps Script. You only do this once on each device.</p>
+  <form id="setupForm">
+    <div class="field">
+      <label for="apiUrl">Web app link</label>
+      <input id="apiUrl" type="url" inputmode="url" placeholder="https://script.google.com/macros/s/…/exec" autocapitalize="none" autocorrect="off" spellcheck="false" required>
+    </div>
+    <div class="err" id="setupErr"></div>
+    <button class="btn" type="submit" id="setupBtn">Connect</button>
+  </form>
+  <p class="note">No link yet? Follow the Google Sheet setup steps first.</p>
+</section>
+
+<section id="authView" class="auth hidden">
+  <div class="logo">W</div>
+  <h1 id="authTitle">Welcome back</h1>
+  <p class="sub" id="authSub">Log in to Wally.</p>
+  <form id="authForm" autocomplete="on">
+    <div class="field">
+      <label for="username">Username</label>
+      <input id="username" name="username" autocomplete="username" autocapitalize="none" autocorrect="off" required>
+    </div>
+    <div class="field">
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required minlength="4">
+    </div>
+    <div class="field hidden" id="confirmWrap">
+      <label for="password2">Confirm password</label>
+      <input id="password2" type="password" autocomplete="new-password" minlength="4">
+    </div>
+    <label class="check"><input type="checkbox" id="remember" checked> Keep me logged in</label>
+    <div class="err" id="authErr"></div>
+    <button class="btn" type="submit" id="authBtn">Log in</button>
+    <button class="btn ghost" type="button" id="authSwitch">Create an account</button>
+  </form>
+  <button class="btn ghost" type="button" id="changeSheet" style="font-size:14px;font-weight:500">Change Google Sheet link</button>
+  <p class="note">Your account and data are saved in your own Google Sheet, so you can log in on any device.</p>
+</section>
+
+<!-- ============ MAIN APP ============ -->
+<section id="appView" class="hidden">
+  <div class="wrap">
+    <div class="top">
+      <div>
+        <div class="hi" id="hello"></div>
+        <h2 id="pageTitle">Dashboard</h2>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="sync hidden" id="syncBtn"></button>
+        <button class="icon-btn" id="menuBtn" aria-label="Menu">☰</button>
+      </div>
+    </div>
+
+    <div class="month">
+      <button id="prevM" aria-label="Previous month">‹</button>
+      <span id="monthLabel"></span>
+      <button id="nextM" aria-label="Next month">›</button>
+    </div>
+
+    <!-- DASHBOARD -->
+    <div id="tab-home" class="tab">
+      <div class="card hero">
+        <div class="label">Total balance</div>
+        <div class="amt num" id="totalBal">RM 0.00</div>
+        <div class="sub" style="margin:-8px 0 12px">All income minus all expenses to date</div>
+        <div class="mrows">
+          <div class="sub" id="mLabel" style="margin-bottom:4px"></div>
+          <div class="row-between"><span>Income</span><b class="inc num" id="mInc"></b></div>
+          <div class="row-between"><span>Expenses</span><b class="exp num" id="mExp"></b></div>
+          <div class="row-between net"><span>Net this month</span><b class="num" id="mNet"></b></div>
+        </div>
+      </div>
+      <div id="homeAlerts"></div>
+      <div class="card" id="homeBudget"></div>
+      <div class="card">
+        <h3>Monthly overview <span class="sub" style="font-weight:400">last 6 months</span></h3>
+        <div class="legend"><span><i style="background:var(--s1)"></i>Income</span><span><i style="background:var(--s2)"></i>Expenses</span></div>
+        <div class="chart" id="overviewChart"></div>
+      </div>
+      <div class="card" id="homeInsight"></div>
+      <div class="card">
+        <h3>Recent <button class="link" data-goto="activity">See all</button></h3>
+        <div id="recent"></div>
+      </div>
+    </div>
+
+    <!-- ACTIVITY -->
+    <div id="tab-activity" class="tab hidden">
+      <div class="seg" id="actFilter">
+        <button data-f="all" class="on">All</button>
+        <button data-f="expense">Expenses</button>
+        <button data-f="income">Income</button>
+      </div>
+      <div id="list"></div>
+    </div>
+
+    <!-- BUDGET -->
+    <div id="tab-budget" class="tab hidden">
+      <div class="card" id="budgetOverall"></div>
+      <div class="card">
+        <h3>Category budgets <button class="link" id="editBudget2">Edit</button></h3>
+        <div id="budgetCats"></div>
+      </div>
+    </div>
+
+    <!-- INSIGHTS -->
+    <div id="tab-insights" class="tab hidden">
+      <div class="card">
+        <h3>Compared with last month</h3>
+        <div class="sub" id="cmpLabel" style="margin:-6px 0 10px"></div>
+        <div class="cmp" id="cmp"></div>
+      </div>
+      <div class="card">
+        <h3>Smart insights</h3>
+        <div id="insList"></div>
+      </div>
+      <div class="card">
+        <h3>Top categories</h3>
+        <div id="topCats"></div>
+      </div>
+      <div class="card">
+        <h3>Spending trend <span class="sub" style="font-weight:400">expenses, 6 months</span></h3>
+        <div class="chart" id="trendChart"></div>
+      </div>
+    </div>
+  </div>
+
+  <button class="fab" id="addBtn" aria-label="Add transaction">+</button>
+
+  <nav class="tabbar" id="tabbar">
+    <button data-tab="home" class="on">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/></svg>Dashboard</button>
+    <button data-tab="activity">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"/></svg>Activity</button>
+    <button data-tab="budget">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 3v9l6.4 6.4"/></svg>Budget</button>
+    <button data-tab="insights">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0 0 12 3z"/></svg>Insights</button>
+  </nav>
+</section>
+
+<div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+
+<!-- ============ ADD / EDIT SHEET ============ -->
+<div id="txBackdrop" class="backdrop hidden"></div>
+<div id="txSheet" class="sheet hidden" role="dialog" aria-modal="true">
+  <div class="grab"></div>
+  <h3 id="txTitle">Add transaction</h3>
+  <form id="txForm">
+    <div class="seg" id="typeSeg">
+      <button type="button" data-type="expense" class="on">Expense</button>
+      <button type="button" data-type="income">Income</button>
+    </div>
+    <div class="field money-in lg">
+      <span>RM</span>
+      <input id="amount" type="text" inputmode="decimal" placeholder="0.00" autocomplete="off">
+    </div>
+    <div class="field">
+      <label>Category</label>
+      <div class="chips" id="catChips"></div>
+    </div>
+    <div class="field">
+      <label for="date">Date</label>
+      <input id="date" type="date" required>
+    </div>
+    <div class="field">
+      <label for="note">Note (optional)</label>
+      <input id="note" maxlength="80" placeholder="e.g. Nasi lemak">
+    </div>
+    <div class="err" id="txErr"></div>
+    <div class="row-btns">
+      <button class="btn" type="submit">Save</button>
+      <button class="btn danger hidden" type="button" id="delBtn">Delete</button>
+      <button class="btn ghost" type="button" data-close="tx">Cancel</button>
+    </div>
+  </form>
+</div>
+
+<!-- ============ BUDGET SHEET ============ -->
+<div id="budgetBackdrop" class="backdrop hidden"></div>
+<div id="budgetSheet" class="sheet hidden" role="dialog" aria-modal="true">
+  <div class="grab"></div>
+  <h3>Monthly budgets</h3>
+  <p class="sub" style="margin:-6px 0 14px">These limits repeat every month. Leave a box empty for no limit.</p>
+  <form id="budgetForm">
+    <label for="bTotal" class="sub" style="display:block;margin-bottom:6px">Total monthly budget</label>
+    <div class="field money-in lg">
+      <span>RM</span>
+      <input id="bTotal" type="text" inputmode="decimal" placeholder="No limit" autocomplete="off">
+    </div>
+    <div class="sub" style="margin:14px 0 10px">Per category</div>
+    <div id="bCats"></div>
+    <div class="sub" id="bSum"></div>
+    <div class="err" id="bErr"></div>
+    <div class="row-btns">
+      <button class="btn" type="submit">Save budgets</button>
+      <button class="btn ghost" type="button" data-close="budget">Cancel</button>
+    </div>
+  </form>
+</div>
+
+<!-- ============ MENU SHEET ============ -->
+<div id="menuBackdrop" class="backdrop hidden"></div>
+<div id="menuSheet" class="sheet hidden" role="dialog" aria-modal="true">
+  <div class="grab"></div>
+  <h3>Menu</h3>
+  <button class="menu-item" id="exportBtn">⬇️ Backup data (download file)</button>
+  <button class="menu-item hidden" id="openSheetBtn">📊 Open my Google Sheet</button>
+  <button class="menu-item" id="importBtn">⬆️ Restore from backup</button>
+  <button class="menu-item" id="csvBtn">📄 Export to CSV (Excel)</button>
+  <button class="menu-item" id="logoutBtn" style="color:var(--expense)">↩︎ Log out</button>
+  <button class="btn ghost" data-close="menu">Close</button>
+  <input type="file" id="importFile" accept="application/json,.json" class="hidden">
+</div>
+
+<script>
+(() => {
+  // =============== Config ===============
+  const CATS = {
+    expense: [
+      { name: 'Food & Drinks', icon: '🍜' },
+      { name: 'Transportation', icon: '🚗' },
+      { name: 'Shopping', icon: '🛍️' },
+      { name: 'Bills & Utilities', icon: '💡' },
+      { name: 'Groceries', icon: '🛒' },
+      { name: 'Others', icon: '📦' },
+    ],
+    income: [
+      { name: 'Salary', icon: '💼' },
+      { name: 'Business', icon: '🏪' },
+      { name: 'Gift', icon: '🎁' },
+      { name: 'Others', icon: '💰' },
+    ],
+  };
+  const WARN_AT = 0.8; // "near limit" threshold
+
+  // =============== Helpers ===============
+  const $ = id => document.getElementById(id);
+  const fmt = n => 'RM ' + Number(n).toLocaleString('en-MY', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmtS = n => (n < 0 ? '-' : '') + fmt(Math.abs(n));
+  const fmt0 = n => 'RM ' + Math.round(n).toLocaleString('en-MY');
+  const pct = x => Math.round(x * 100) + '%';
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const store = {
+    get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } },
+    set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch { alert('Could not save. Storage may be full or blocked.'); return false; } },
+    del(k) { try { localStorage.removeItem(k); } catch {} },
+  };
+  const ss = {
+    get(k) { try { return sessionStorage.getItem(k); } catch { return null; } },
+    set(k, v) { try { sessionStorage.setItem(k, v); } catch {} },
+    del(k) { try { sessionStorage.removeItem(k); } catch {} },
+  };
+  const parseMoney = s => { const v = parseFloat(String(s).replace(/[^\d.]/g, '')); return isFinite(v) ? Math.round(v * 100) / 100 : NaN; };
+  const iconFor = (type, cat) => (CATS[type].find(c => c.name === cat) || {}).icon || '•';
+
+  // dates
+  const today = () => { const d = new Date(); return new Date(d - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); };
+  const mkOf = d => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+  const shiftMk = (mk, n) => { const [y, m] = mk.split('-').map(Number); return mkOf(new Date(y, m - 1 + n, 1)); };
+  const daysIn = mk => { const [y, m] = mk.split('-').map(Number); return new Date(y, m, 0).getDate(); };
+  const mkName = (mk, opt = { month: 'long', year: 'numeric' }) => { const [y, m] = mk.split('-').map(Number); return new Date(y, m - 1, 1).toLocaleDateString('en-MY', opt); };
+  const shortM = mk => mkName(mk, { month: 'short' });
+
+  // =============== Password hashing (PBKDF2) ===============
+  const toHex = buf => [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
+  async function hashPassword(pw, saltHex) {
+    const salt = saltHex ? Uint8Array.from(saltHex.match(/../g).map(h => parseInt(h, 16)))
+                         : crypto.getRandomValues(new Uint8Array(16));
+    const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(pw), 'PBKDF2', false, ['deriveBits']);
+    const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt, iterations: 150000, hash: 'SHA-256' }, key, 256);
+    return { salt: toHex(salt), hash: toHex(bits) };
+  }
+
+  // =============== Google Sheet connection ===============
+  const API_RE = /^https:\/\/script\.google\.com\/(a\/[^/]+\/)?macros\/s\/[\w-]+\/exec$/;
+  const LOCAL_RE = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?\/\S*$/; // only for testing on a computer
+  const apiUrl = () => store.get('wally_api', '');
+
+  async function api(action, data = {}, url = apiUrl()) {
+    if (!url) throw Object.assign(new Error('No Google Sheet is connected.'), { code: 'nourl' });
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 25000);
+    let res;
+    try {
+      res = await fetch(url, {
+        method: 'POST', redirect: 'follow', signal: ctl.signal,
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // "simple" request: no CORS preflight
+        body: JSON.stringify({ action, ...data }),
+      });
+    } catch {
+      throw Object.assign(new Error(navigator.onLine
+        ? 'Could not reach your Google Sheet. Check your internet connection and try again.'
+        : 'You are offline. Changes are saved on this device and will sync when you reconnect.'), { code: 'network' });
+    } finally { clearTimeout(timer); }
+    let body;
+    try { body = await res.json(); } catch {
+      throw Object.assign(new Error('That link did not answer like Wally. Use the Web app link ending in /exec, and make sure "Who has access" is set to "Anyone".'), { code: 'badurl' });
+    }
+    if (!body.ok) throw Object.assign(new Error(body.error || 'Something went wrong.'), { code: body.code || 'error' });
+    return body;
+  }
+
+  function showView(v) { ['setupView', 'authView', 'appView'].forEach(id => $(id).classList.toggle('hidden', id !== v)); }
+
+  $('setupForm').onsubmit = async e => {
+    e.preventDefault();
+    const url = $('apiUrl').value.trim(), err = $('setupErr');
+    err.textContent = '';
+    if (!API_RE.test(url) && !LOCAL_RE.test(url)) {
+      err.textContent = "That doesn't look like a Web app link. It should start with https://script.google.com/macros/s/ and end with /exec";
+      return;
+    }
+    $('setupBtn').disabled = true; $('setupBtn').textContent = 'Connecting…';
+    try {
+      await api('ping', {}, url);
+      store.set('wally_api', url);
+      showView('authView');
+      setAuthMode(!store.get('wally_last_user', ''));
+    } catch (x) { err.textContent = x.message; }
+    finally { $('setupBtn').disabled = false; $('setupBtn').textContent = 'Connect'; }
+  };
+  $('changeSheet').onclick = () => { $('apiUrl').value = apiUrl(); $('setupErr').textContent = ''; showView('setupView'); };
+
+  // =============== Auth ===============
+  let user = null, session = null, registering = false;
+
+  function setAuthMode(reg) {
+    registering = reg;
+    $('authTitle').textContent = reg ? 'Create account' : 'Welcome back';
+    $('authSub').textContent = reg ? 'Set up a username and password for Wally.' : 'Log in to Wally.';
+    $('authBtn').textContent = reg ? 'Create account' : 'Log in';
+    $('authSwitch').textContent = reg ? 'I already have an account' : 'Create an account';
+    $('confirmWrap').classList.toggle('hidden', !reg);
+    $('password').autocomplete = reg ? 'new-password' : 'current-password';
+    $('authErr').textContent = '';
+    const last = store.get('wally_last_user', '');
+    if (!reg && last && !$('username').value) $('username').value = last;
+  }
+  $('authSwitch').onclick = () => setAuthMode(!registering);
+
+  $('authForm').onsubmit = async e => {
+    e.preventDefault();
+    const err = $('authErr'); err.textContent = '';
+    if (!window.crypto || !crypto.subtle) { err.textContent = 'Login needs a secure (https) connection. Open Wally from its https link.'; return; }
+    const name = $('username').value.trim().toLowerCase();
+    const pw = $('password').value;
+    if (!/^[a-z0-9_.-]{3,30}$/.test(name)) { err.textContent = 'Username: 3–30 letters, numbers, . _ or -'; return; }
+    if (registering && pw.length < 6) { err.textContent = 'Use at least 6 characters for your password.'; return; }
+    if (registering && pw !== $('password2').value) { err.textContent = 'Passwords do not match.'; return; }
+    if (!pw) { err.textContent = 'Enter your password.'; return; }
+    const btn = $('authBtn'), label = btn.textContent;
+    btn.disabled = true; btn.textContent = registering ? 'Creating account…' : 'Logging in…';
+    try {
+      let res;
+      // The password never leaves the device: we send a slow PBKDF2 hash of it, and the
+      // sheet stores only a SHA-256 of that hash.
+      if (registering) {
+        const h = await hashPassword(pw);
+        res = await api('register', { username: name, salt: h.salt, verifier: h.hash });
+      } else {
+        const { salt } = await api('salt', { username: name });
+        const h = await hashPassword(pw, salt);
+        res = await api('login', { username: name, verifier: h.hash });
+      }
+      const sess = { user: res.username, token: res.token };
+      if ($('remember').checked) store.set('wally_session', sess);
+      else { store.del('wally_session'); ss.set('wally_session', JSON.stringify(sess)); }
+      store.set('wally_last_user', res.username);
+      $('password').value = $('password2').value = '';
+      login(sess);
+    } catch (x) { err.textContent = x.message; }
+    finally { btn.disabled = false; btn.textContent = label; }
+  };
+
+  function login(sess) {
+    user = sess.user; session = sess;
+    $('hello').textContent = 'Hi, ' + user;
+    showView('appView');
+    render();
+    syncNow();
+  }
+
+  async function logout() {
+    closeSheet('menu');
+    if (hasPending()) {
+      await syncNow();
+      if (hasPending() && !confirm('Some changes have not reached your Google Sheet yet (you may be offline). Log out anyway and lose them?')) return;
+    }
+    if (session) api('logout', { username: user, token: session.token }).catch(() => {});
+    ['wally_tx_', 'wally_budget_', 'wally_sync_'].forEach(k => store.del(k + user));
+    endSession();
+  }
+  function endSession(msg) {
+    store.del('wally_session'); ss.del('wally_session');
+    user = null; session = null;
+    clearTimeout(syncTimer); setSync('idle');
+    showView('authView'); setAuthMode(false);
+    if (msg) $('authErr').textContent = msg;
+  }
+
+  // =============== Data (local copy of the sheet) ===============
+  // Each record carries `updated` (ms) and `dirty` (not yet in the sheet). Deletes are kept as
+  // `deleted: true` so the deletion can reach the sheet and your other devices.
+  const rawTx = () => user ? store.get('wally_tx_' + user, []) : [];
+  const getTx = () => rawTx().filter(t => !t.deleted);
+  function upsertTx(rec) {
+    const l = rawTx(), i = l.findIndex(x => x.id === rec.id);
+    const r = { ...rec, updated: Math.max(Date.now(), (i >= 0 ? l[i].updated || 0 : 0) + 1), dirty: true };
+    if (i >= 0) l[i] = r; else l.push(r);
+    if (!store.set('wally_tx_' + user, l)) return false;
+    scheduleSync();
+    return true;
+  }
+  function deleteTx(id) { const t = rawTx().find(x => x.id === id); return t ? upsertTx({ ...t, deleted: true }) : false; }
+  function addTxs(arr) {
+    const l = rawTx(), now = Date.now();
+    arr.forEach((t, i) => l.push({ id: String(t.id), type: t.type, amount: +t.amount, category: String(t.category), date: t.date,
+      note: String(t.note || ''), created: +t.created || now, updated: now + i, dirty: true }));
+    if (!store.set('wally_tx_' + user, l)) return false;
+    scheduleSync();
+    return true;
+  }
+  const getBudget = () => (user && store.get('wally_budget_' + user, null)) || { total: 0, cats: {} };
+  function saveBudget(b) {
+    const r = { total: b.total || 0, cats: b.cats || {}, updated: Math.max(Date.now(), (getBudget().updated || 0) + 1), dirty: true };
+    if (!store.set('wally_budget_' + user, r)) return false;
+    scheduleSync();
+    return true;
+  }
+  const hasPending = () => rawTx().some(t => t.dirty) || !!getBudget().dirty;
+  const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+
+  // =============== Sync with the Google Sheet ===============
+  const SYNC_LABEL = { idle: '', pending: '• Saving', syncing: '↻ Syncing', ok: '✓ Synced', offline: 'Offline', error: '⚠ Not synced' };
+  let syncP = null, syncAgain = false, syncTimer = null, syncMsg = '';
+  function setSync(st, msg = '') {
+    syncMsg = msg;
+    const b = $('syncBtn');
+    b.textContent = SYNC_LABEL[st];
+    b.className = 'sync ' + st + (st === 'idle' ? ' hidden' : '');
+    b.setAttribute('aria-label', msg || SYNC_LABEL[st]);
+  }
+  $('syncBtn').onclick = () => { if (syncMsg) alert(syncMsg); syncNow(); };
+  function scheduleSync(ms = 800) {
+    if (!user) return;
+    setSync('pending');
+    clearTimeout(syncTimer);
+    syncTimer = setTimeout(syncNow, ms);
+  }
+  function syncNow() {
+    clearTimeout(syncTimer);
+    if (syncP) { syncAgain = true; return syncP; }
+    syncP = doSync().finally(() => {
+      syncP = null;
+      if (syncAgain && user) { syncAgain = false; scheduleSync(300); }
+    });
+    return syncP;
+  }
+  async function doSync() {
+    if (!user || !session) return;
+    const u = user, token = session.token;
+    setSync('syncing');
+    try {
+      const meta = store.get('wally_sync_' + u, { since: 0 });
+      const changes = rawTx().filter(t => t.dirty).slice(0, 400).map(({ dirty, ...t }) => t);
+      const b = getBudget();
+      const res = await api('sync', {
+        username: u, token, since: meta.since, changes,
+        budget: b.dirty ? { total: b.total, cats: b.cats, updated: b.updated } : null,
+      });
+      if (user !== u) return;
+
+      // merge: newest `updated` wins; local edits made during the request stay dirty
+      const sent = new Map(changes.map(c => [c.id, c.updated]));
+      const list = rawTx(), byId = new Map(list.map(t => [t.id, t]));
+      for (const t of list) if (t.dirty && sent.get(t.id) === t.updated) delete t.dirty;
+      for (const s of res.changes || []) {
+        const l = byId.get(s.id);
+        if (!l) { list.push(s); byId.set(s.id, s); }
+        else if (s.updated > l.updated || (!l.dirty && s.updated === l.updated)) {
+          Object.keys(l).forEach(k => delete l[k]);
+          Object.assign(l, s);
+        }
+      }
+      store.set('wally_tx_' + u, list);
+
+      let cb = getBudget();
+      if (cb.dirty && b.dirty && cb.updated === b.updated) { cb = { ...cb }; delete cb.dirty; }
+      if (res.budget && !cb.dirty && res.budget.updated >= (cb.updated || 0)) {
+        cb = { total: +res.budget.total || 0, cats: res.budget.cats || {}, updated: res.budget.updated };
+      }
+      store.set('wally_budget_' + u, cb);
+      store.set('wally_sync_' + u, { since: res.serverTime });
+      if (res.sheetUrl) store.set('wally_sheet_url', res.sheetUrl);
+
+      const pending = list.some(t => t.dirty) || cb.dirty;
+      if (pending) syncAgain = true;
+      setSync(pending ? 'pending' : 'ok');
+      render();
+    } catch (x) {
+      if (user !== u) return;
+      if (x.code === 'auth') { endSession(x.message); return; }
+      setSync(x.code === 'network' && !navigator.onLine ? 'offline' : 'error', x.message);
+    }
+  }
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && user) syncNow(); });
+  window.addEventListener('online', () => { if (user) syncNow(); });
+  window.addEventListener('offline', () => { if (user) setSync('offline', 'You are offline. Changes are saved on this device and will sync when you reconnect.'); });
+  setInterval(() => { if (user && document.visibilityState === 'visible') syncNow(); }, 60000);
+
+  /** Totals for a month; uptoDay limits to days 1..uptoDay (for fair month-to-date comparisons). */
+  function stats(list, mk, uptoDay) {
+    const s = { inc: 0, exp: 0, byCat: {}, items: [] };
+    for (const t of list) {
+      if (!t.date.startsWith(mk)) continue;
+      if (uptoDay && +t.date.slice(8, 10) > uptoDay) continue;
+      s.items.push(t);
+      if (t.type === 'income') s.inc += t.amount;
+      else { s.exp += t.amount; s.byCat[t.category] = (s.byCat[t.category] || 0) + t.amount; }
+    }
+    return s;
+  }
+
+  function status(spent, limit) {
+    if (!limit) return null;
+    const p = spent / limit;
+    if (spent > limit) return { cls: 'crit', label: 'Over budget', icon: '⛔', p, level: 2 };
+    if (p >= WARN_AT) return { cls: 'warn', label: 'Near limit', icon: '⚠️', p, level: 1 };
+    return { cls: 'good', label: 'On track', icon: '✅', p, level: 0 };
+  }
+
+  // =============== Navigation ===============
+  let view = mkOf(new Date());
+  let tab = 'home';
+  try { tab = localStorage.getItem('wally_tab') || 'home'; } catch {}
+  const TITLES = { home: 'Dashboard', activity: 'Activity', budget: 'Budget', insights: 'Insights' };
+
+  function setTab(t) {
+    tab = TITLES[t] ? t : 'home';
+    try { localStorage.setItem('wally_tab', tab); } catch {}
+    document.querySelectorAll('.tab').forEach(el => el.classList.toggle('hidden', el.id !== 'tab-' + tab));
+    document.querySelectorAll('#tabbar button').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
+    $('pageTitle').textContent = TITLES[tab];
+    window.scrollTo(0, 0);
+    render();
+  }
+  $('tabbar').onclick = e => { const b = e.target.closest('button'); if (b) setTab(b.dataset.tab); };
+  document.addEventListener('click', e => { const g = e.target.closest('[data-goto]'); if (g) setTab(g.dataset.goto); });
+  $('prevM').onclick = () => { view = shiftMk(view, -1); render(); };
+  $('nextM').onclick = () => { view = shiftMk(view, 1); render(); };
+
+  // =============== Render ===============
+  function render() {
+    if (!user) return;
+    $('monthLabel').textContent = mkName(view);
+    const list = getTx();
+    const budget = getBudget();
+    if (tab === 'home') renderHome(list, budget);
+    else if (tab === 'activity') renderActivity(list);
+    else if (tab === 'budget') renderBudget(list, budget);
+    else renderInsights(list);
+  }
+
+  function txRow(t) {
+    const sign = t.type === 'income' ? '+' : '-';
+    return `<div class="tx" data-id="${t.id}">
+      <div class="ic">${iconFor(t.type, t.category)}</div>
+      <div class="mid"><b>${esc(t.category)}</b><small>${esc(t.note || new Date(t.date + 'T00:00').toLocaleDateString('en-MY', { day: 'numeric', month: 'short' }))}</small></div>
+      <div class="val num ${t.type === 'income' ? 'inc' : 'exp'}">${sign}${fmt(t.amount)}</div>
+    </div>`;
+  }
+  const sortTx = arr => arr.sort((a, b) => b.date.localeCompare(a.date) || b.created - a.created);
+  document.addEventListener('click', e => { const row = e.target.closest('.tx'); if (row) openTx(row.dataset.id); });
+
+  // ---------- Budget context shared by dashboard + budget tab ----------
+  function budgetCtx(list, budget) {
+    const s = stats(list, view);
+    const isCur = view === today().slice(0, 7);
+    const dim = daysIn(view);
+    const dayNow = new Date().getDate();
+    const daysLeft = isCur ? dim - dayNow + 1 : 0;
+    const remaining = budget.total ? budget.total - s.exp : 0;
+    const projected = isCur && dayNow > 0 ? s.exp / dayNow * dim : s.exp;
+    const alerts = [];
+    if (budget.total) {
+      const st = status(s.exp, budget.total);
+      if (st.level) alerts.push({ st, title: st.level === 2 ? 'Over your monthly budget' : 'Close to your monthly budget',
+        text: st.level === 2 ? `${fmt(s.exp - budget.total)} over your ${fmt(budget.total)} limit.` : `${pct(st.p)} used · ${fmt(remaining)} left.` });
+    }
+    for (const c of CATS.expense) {
+      const lim = budget.cats[c.name]; if (!lim) continue;
+      const sp = s.byCat[c.name] || 0; const st = status(sp, lim);
+      if (st.level) alerts.push({ st, title: `${c.icon} ${c.name}: ${st.label.toLowerCase()}`,
+        text: st.level === 2 ? `${fmt(sp - lim)} over the ${fmt(lim)} budget.` : `${pct(st.p)} used · ${fmt(lim - sp)} left.` });
+    }
+    alerts.sort((a, b) => b.st.level - a.st.level);
+    return { s, isCur, dim, dayNow, daysLeft, remaining, projected, alerts };
+  }
+  const alertHtml = a => `<div class="alert ${a.st.cls}"><span aria-hidden="true">${a.st.icon}</span><div><b>${esc(a.title)}</b>${esc(a.text)}</div></div>`;
+
+  // ---------- Dashboard ----------
+  function renderHome(list, budget) {
+    const t = today();
+    let allInc = 0, allExp = 0;
+    for (const x of list) if (x.date <= t) { if (x.type === 'income') allInc += x.amount; else allExp += x.amount; }
+    const total = allInc - allExp;
+    $('totalBal').textContent = fmtS(total);
+    $('totalBal').style.color = total < 0 ? 'var(--expense)' : '';
+
+    const ctx = budgetCtx(list, budget);
+    const { s } = ctx;
+    $('mLabel').textContent = mkName(view);
+    $('mInc').textContent = fmt(s.inc);
+    $('mExp').textContent = fmt(s.exp);
+    $('mNet').textContent = fmtS(s.inc - s.exp);
+    $('mNet').className = 'num ' + (s.inc - s.exp < 0 ? 'exp' : '');
+
+    $('homeAlerts').innerHTML = ctx.alerts.slice(0, 3).map(alertHtml).join('') +
+      (ctx.alerts.length > 3 ? `<button class="btn soft" data-goto="budget" style="margin-bottom:14px">See all ${ctx.alerts.length} budget alerts</button>` : '');
+
+    // budget snapshot
+    if (budget.total) {
+      const st = status(s.exp, budget.total);
+      $('homeBudget').innerHTML = `
+        <h3>Monthly budget <button class="link" data-goto="budget">Details</button></h3>
+        <div class="row-between"><span class="big num">${fmt(s.exp)}</span><span class="badge ${st.cls}">${st.label}</span></div>
+        <div class="sub num">of ${fmt(budget.total)}</div>
+        <div class="prog" role="img" aria-label="${pct(st.p)} of budget used"><i class="st-${st.cls}" style="width:${Math.min(100, st.p * 100)}%"></i></div>
+        <div class="row-between sub num"><span>${pct(st.p)} used</span>
+          <span>${ctx.remaining >= 0 ? fmt(ctx.remaining) + ' left' : fmt(-ctx.remaining) + ' over'}</span></div>
+        ${ctx.isCur && ctx.remaining > 0 ? `<div class="sub" style="margin-top:8px">You can spend about <b class="num" style="color:var(--text)">${fmt(ctx.remaining / ctx.daysLeft)}</b> a day for the next ${ctx.daysLeft} day${ctx.daysLeft > 1 ? 's' : ''}.</div>` : ''}`;
+    } else {
+      $('homeBudget').innerHTML = `<h3>Monthly budget</h3>
+        <p class="sub" style="margin:0 0 12px">Set a spending limit to track what's left and get alerts before you overspend.</p>
+        <button class="btn soft" data-open-budget>Set a budget</button>`;
+    }
+
+    // 6-month overview chart
+    const months = [...Array(6)].map((_, i) => shiftMk(view, i - 5));
+    const ms = months.map(m => stats(list, m));
+    barChart($('overviewChart'), months, [
+      { name: 'Income', color: 'var(--s1)', values: ms.map(x => x.inc) },
+      { name: 'Expenses', color: 'var(--s2)', values: ms.map(x => x.exp) },
+    ]);
+
+    // one headline insight
+    const ins = buildInsights(list)[0];
+    $('homeInsight').innerHTML = ins
+      ? `<h3>Insight <button class="link" data-goto="insights">More</button></h3><div class="ins"><span class="ic">${ins.icon}</span><div>${ins.html}</div></div>`
+      : `<h3>Insight</h3><p class="sub" style="margin:0">Add a few transactions and Wally will show you spending trends here.</p>`;
+
+    const recent = sortTx(s.items.slice()).slice(0, 5);
+    $('recent').innerHTML = recent.length ? recent.map(txRow).join('') : '<div class="empty">No transactions this month.<br>Tap + to add one.</div>';
+  }
+
+  // ---------- Activity ----------
+  let actFilter = 'all';
+  $('actFilter').onclick = e => {
+    const b = e.target.closest('button'); if (!b) return;
+    actFilter = b.dataset.f;
+    $('actFilter').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+    render();
+  };
+  function renderActivity(list) {
+    const items = sortTx(stats(list, view).items.filter(t => actFilter === 'all' || t.type === actFilter));
+    if (!items.length) { $('list').innerHTML = '<div class="empty">Nothing here for this month.<br>Tap + to add a transaction.</div>'; return; }
+    let html = '', last = '', t0 = today();
+    for (const t of items) {
+      if (t.date !== last) {
+        last = t.date;
+        const dayItems = items.filter(x => x.date === t.date);
+        const net = dayItems.reduce((a, x) => a + (x.type === 'income' ? x.amount : -x.amount), 0);
+        const label = t.date === t0 ? 'Today' : new Date(t.date + 'T00:00').toLocaleDateString('en-MY', { weekday: 'short', day: 'numeric', month: 'short' });
+        html += `<div class="day row-between"><span>${label}</span><span class="num">${fmtS(net)}</span></div>`;
+      }
+      html += txRow(t);
+    }
+    $('list').innerHTML = html;
+  }
+
+  // ---------- Budget ----------
+  function renderBudget(list, budget) {
+    const ctx = budgetCtx(list, budget);
+    const { s } = ctx;
+    let h = '';
+    if (budget.total) {
+      const st = status(s.exp, budget.total);
+      h += `<h3>Total budget <button class="link" data-open-budget>Edit</button></h3>
+        <div class="row-between"><span class="big num">${fmt(s.exp)}</span><span class="badge ${st.cls}">${st.label}</span></div>
+        <div class="sub num">spent of ${fmt(budget.total)}</div>
+        <div class="prog" role="img" aria-label="${pct(st.p)} of budget used"><i class="st-${st.cls}" style="width:${Math.min(100, st.p * 100)}%"></i></div>
+        <div class="row-between sub num"><span>${pct(st.p)} used</span><span>${ctx.remaining >= 0 ? fmt(ctx.remaining) + ' left' : fmt(-ctx.remaining) + ' over'}</span></div>`;
+      if (ctx.isCur) {
+        const projOver = ctx.projected - budget.total;
+        h += `<div class="split" style="grid-template-columns:1fr 1fr;margin-top:12px">
+          <div><small>Days left</small><b class="num">${ctx.daysLeft}</b></div>
+          <div><small>Safe to spend / day</small><b class="num">${ctx.remaining > 0 ? fmt(ctx.remaining / ctx.daysLeft) : 'RM 0.00'}</b></div>
+        </div>
+        <p class="sub" style="margin:10px 0 0">${s.exp === 0 ? 'No spending yet this month.' :
+          projOver > 0 ? `At this pace you'll spend about <b class="num" style="color:var(--text)">${fmt0(ctx.projected)}</b> this month: <b style="color:var(--text)">${fmt0(projOver)} over budget</b>.`
+                       : `At this pace you'll spend about <b class="num" style="color:var(--text)">${fmt0(ctx.projected)}</b>, staying within budget.`}</p>`;
+      }
+    } else {
+      h += `<h3>Total budget</h3><p class="sub" style="margin:0 0 12px">No monthly limit set. You spent <b class="num" style="color:var(--text)">${fmt(s.exp)}</b> in ${mkName(view, { month: 'long' })}.</p>
+        <button class="btn" data-open-budget>Set monthly budget</button>`;
+    }
+    if (ctx.alerts.length) h += `<div style="margin-top:14px">${ctx.alerts.map(alertHtml).join('')}</div>`;
+    $('budgetOverall').innerHTML = h;
+
+    $('budgetCats').innerHTML = CATS.expense.map(c => {
+      const sp = s.byCat[c.name] || 0, lim = budget.cats[c.name] || 0, st = status(sp, lim);
+      if (!st) return `<div class="brow"><div class="row-between"><span class="name">${c.icon} ${esc(c.name)}</span><span class="num">${fmt(sp)}</span></div>
+        <div class="meta"><span>No budget</span><button class="link" data-open-budget style="border:0;background:none;color:var(--accent);padding:0;font-size:13px;cursor:pointer">Set limit</button></div></div>`;
+      return `<div class="brow"><div class="row-between"><span class="name">${c.icon} ${esc(c.name)}</span><span class="badge ${st.cls}">${st.label}</span></div>
+        <div class="prog thin" role="img" aria-label="${pct(st.p)} used"><i class="st-${st.cls}" style="width:${Math.min(100, st.p * 100)}%"></i></div>
+        <div class="meta num"><span>${fmt(sp)} of ${fmt(lim)}</span><span>${sp <= lim ? fmt(lim - sp) + ' left' : fmt(sp - lim) + ' over'}</span></div></div>`;
+    }).join('');
+  }
+
+  // budget editor
+  document.addEventListener('click', e => { if (e.target.closest('[data-open-budget]')) openBudget(); });
+  $('editBudget2').onclick = openBudget;
+  function openBudget() {
+    const b = getBudget();
+    $('bTotal').value = b.total ? b.total.toFixed(2) : '';
+    $('bCats').innerHTML = CATS.expense.map((c, i) => `
+      <div class="bfield"><label for="bc${i}">${c.icon} ${esc(c.name)}</label>
+      <div class="field money-in"><span>RM</span><input id="bc${i}" data-cat="${esc(c.name)}" type="text" inputmode="decimal" placeholder="—" autocomplete="off" value="${b.cats[c.name] ? b.cats[c.name].toFixed(2) : ''}"></div></div>`).join('');
+    $('bErr').textContent = '';
+    updateBSum();
+    openSheet('budget');
+  }
+  function updateBSum() {
+    let sum = 0;
+    $('bCats').querySelectorAll('input').forEach(i => { const v = parseMoney(i.value); if (v > 0) sum += v; });
+    const tot = parseMoney($('bTotal').value);
+    $('bSum').textContent = sum ? `Category budgets add up to ${fmt(sum)}` + (tot > 0 && sum > tot ? ', more than your total budget.' : '.') : '';
+  }
+  $('budgetForm').oninput = updateBSum;
+  $('budgetForm').onsubmit = e => {
+    e.preventDefault();
+    const read = el => { const raw = el.value.trim(); if (!raw) return 0; const v = parseMoney(raw); return v > 0 ? v : NaN; };
+    const total = read($('bTotal'));
+    if (isNaN(total)) { $('bErr').textContent = 'Enter a valid total budget, or leave it empty.'; return; }
+    const cats = {};
+    for (const i of $('bCats').querySelectorAll('input')) {
+      const v = read(i);
+      if (isNaN(v)) { $('bErr').textContent = `Check the amount for ${i.dataset.cat}.`; return; }
+      if (v) cats[i.dataset.cat] = v;
+    }
+    if (!saveBudget({ total, cats })) return;
+    closeSheet('budget');
+    render();
+    const ctx = budgetCtx(getTx(), getBudget());
+    if (ctx.alerts.length) toast(ctx.alerts[0]);
+  };
+
+  // ---------- Insights ----------
+  function compareCtx(list) {
+    const isCur = view === today().slice(0, 7);
+    const upto = isCur ? new Date().getDate() : null;
+    const prevMk = shiftMk(view, -1);
+    // compare like-for-like: if this month is in progress, compare the same number of days of last month
+    const cur = stats(list, view, upto);
+    const prev = stats(list, prevMk, upto ? Math.min(upto, daysIn(prevMk)) : null);
+    return { isCur, upto, prevMk, cur, prev };
+  }
+  const change = (a, b) => b ? (a - b) / b : null;
+
+  function buildInsights(list) {
+    const { isCur, upto, prevMk, cur, prev } = compareCtx(list);
+    const full = stats(list, view);
+    const out = [];
+    if (!full.items.length) return out;
+    const prevLabel = isCur ? `this time last month` : `in ${mkName(prevMk, { month: 'long' })}`;
+
+    // total spending change
+    const ch = change(cur.exp, prev.exp);
+    if (ch !== null && Math.abs(ch) >= 0.05) {
+      out.push({ icon: ch > 0 ? '📈' : '📉', score: Math.abs(ch) * 3,
+        html: `You've spent <b>${pct(Math.abs(ch))} ${ch > 0 ? 'more' : 'less'}</b> than ${prevLabel} (${fmt(cur.exp)} vs ${fmt(prev.exp)}).` });
+    }
+    // top category
+    const cats = Object.entries(full.byCat).sort((a, b) => b[1] - a[1]);
+    if (cats.length && full.exp) {
+      const [c, v] = cats[0];
+      out.push({ icon: iconFor('expense', c), score: 1.5,
+        html: `<b>${esc(c)}</b> is your top spending category: ${fmt(v)}, ${pct(v / full.exp)} of all expenses.` });
+    }
+    // biggest category move
+    let up = null, down = null;
+    for (const c of new Set([...Object.keys(cur.byCat), ...Object.keys(prev.byCat)])) {
+      const a = cur.byCat[c] || 0, b = prev.byCat[c] || 0, d = a - b;
+      if (b > 0 && d > 0 && (!up || d > up.d)) up = { c, d, r: d / b };
+      if (b > 0 && d < 0 && (!down || d < down.d)) down = { c, d, r: -d / b };
+    }
+    if (up && up.d >= 10) out.push({ icon: '🔺', score: 2 + up.r,
+      html: `Spending on <b>${esc(up.c)}</b> is up <b>${fmt(up.d)}</b> (${pct(up.r)}) compared with ${prevLabel}.` });
+    if (down && -down.d >= 10) out.push({ icon: '👏', score: 1.8 + down.r,
+      html: `Nice! You cut <b>${esc(down.c)}</b> by <b>${fmt(-down.d)}</b> (${pct(down.r)}) compared with ${prevLabel}.` });
+    // savings rate
+    if (full.inc > 0) {
+      const sr = (full.inc - full.exp) / full.inc;
+      out.push(sr >= 0
+        ? { icon: '💰', score: sr >= 0.2 ? 1.6 : 1.2, html: `You've kept <b>${pct(sr)}</b> of your income this month (${fmt(full.inc - full.exp)}).${sr >= 0.2 ? ' Great saving!' : ''}` }
+        : { icon: '🚨', score: 4, html: `You've spent <b>${fmt(full.exp - full.inc)} more</b> than you earned this month.` });
+    }
+    // daily average + projection
+    if (full.exp) {
+      const days = isCur ? upto : daysIn(view);
+      const avg = full.exp / days;
+      out.push({ icon: '📅', score: 1, html: `You spend about <b>${fmt(avg)}</b> a day on average${isCur ? ' this month' : ''}.` +
+        (isCur && upto < daysIn(view) ? ` At this pace, ${mkName(view, { month: 'long' })} will end around <b>${fmt0(avg * daysIn(view))}</b>.` : '') });
+    }
+    // largest expense
+    const bigE = full.items.filter(t => t.type === 'expense').sort((a, b) => b.amount - a.amount)[0];
+    if (bigE && full.exp && bigE.amount / full.exp >= 0.15) {
+      out.push({ icon: '🧾', score: 1.1, html: `Your largest expense was <b>${fmt(bigE.amount)}</b> on ${esc(bigE.category)}${bigE.note ? ` (${esc(bigE.note)})` : ''}, ${new Date(bigE.date + 'T00:00').toLocaleDateString('en-MY', { day: 'numeric', month: 'short' })}.` });
+    }
+    // busiest weekday
+    const exps = full.items.filter(t => t.type === 'expense');
+    if (exps.length >= 6) {
+      const wd = Array(7).fill(0);
+      exps.forEach(t => wd[new Date(t.date + 'T00:00').getDay()] += t.amount);
+      const i = wd.indexOf(Math.max(...wd));
+      const name = new Date(2024, 0, 7 + i).toLocaleDateString('en-MY', { weekday: 'long' });
+      out.push({ icon: '🗓️', score: 0.9, html: `You spend the most on <b>${name}s</b> (${fmt(wd[i])} this month).` });
+    }
+    return out.sort((a, b) => b.score - a.score);
+  }
+
+  function renderInsights(list) {
+    const { isCur, upto, prevMk, cur, prev } = compareCtx(list);
+    $('cmpLabel').textContent = isCur
+      ? `1–${upto} ${shortM(view)} vs 1–${Math.min(upto, daysIn(prevMk))} ${shortM(prevMk)}`
+      : `${mkName(view, { month: 'long' })} vs ${mkName(prevMk, { month: 'long' })}`;
+    const box = (label, a, b, goodWhenDown) => {
+      const c = change(a, b);
+      let d = '—', col = 'var(--muted)';
+      if (c !== null) {
+        d = (c > 0 ? '▲ ' : c < 0 ? '▼ ' : '') + pct(Math.abs(c));
+        const good = goodWhenDown ? c < 0 : c > 0;
+        col = c === 0 ? 'var(--muted)' : good ? 'var(--income)' : 'var(--expense)';
+      } else if (a > 0) d = 'New';
+      return `<div><small class="sub">${label}</small><div class="delta num" style="color:${col}">${d}</div>
+        <div class="sub num">${fmt(a)}<br>vs ${fmt(b)}</div></div>`;
+    };
+    $('cmp').innerHTML = box('Expenses', cur.exp, prev.exp, true) + box('Income', cur.inc, prev.inc, false);
+
+    const ins = buildInsights(list);
+    $('insList').innerHTML = ins.length
+      ? ins.map(i => `<div class="ins"><span class="ic">${i.icon}</span><div>${i.html}</div></div>`).join('')
+      : '<div class="empty">No transactions this month yet.<br>Insights appear once you add some.</div>';
+
+    // top categories with like-for-like change vs last month
+    const full = stats(list, view);
+    const cats = Object.entries(full.byCat).sort((a, b) => b[1] - a[1]);
+    $('topCats').innerHTML = cats.length ? cats.map(([c, v]) => {
+      const pv = prev.byCat[c] || 0, ch = change(cur.byCat[c] || 0, pv);
+      const chTxt = ch === null ? 'new' : (ch >= 0 ? '▲' : '▼') + pct(Math.abs(ch));
+      return `<div class="bar-row"><div class="lbl"><span>${iconFor('expense', c)} ${esc(c)}</span>
+        <span class="num">${fmt(v)} · ${pct(v / full.exp)} · <span title="vs last month">${chTxt}</span></span></div>
+        <div class="bar"><i style="width:${(v / cats[0][1] * 100).toFixed(1)}%"></i></div></div>`;
+    }).join('') + `<div class="sub">▲▼ change vs ${isCur ? 'the same days of ' : ''}${mkName(prevMk, { month: 'long' })}</div>`
+      : '<div class="empty">No expenses this month.</div>';
+
+    const months = [...Array(6)].map((_, i) => shiftMk(view, i - 5));
+    const vals = months.map(m => stats(list, m).exp);
+    const nz = vals.filter(v => v > 0);
+    barChart($('trendChart'), months, [{ name: 'Expenses', color: 'var(--s2)', values: vals }],
+      { avg: nz.length >= 2 ? nz.reduce((a, b) => a + b, 0) / nz.length : null });
+  }
+
+  // =============== Bar chart (SVG, with hover/tap tooltip + table view) ===============
+  function niceMax(v) {
+    if (v <= 0) return 100;
+    const p = Math.pow(10, Math.floor(Math.log10(v)));
+    for (const m of [1, 2, 4, 5, 8, 10]) if (m * p >= v) return m * p;
+    return 10 * p;
+  }
+  const compact = v => v >= 1000 ? (v / 1000).toFixed(v % 1000 ? 1 : 0).replace(/\.0$/, '') + 'k' : String(Math.round(v));
+  function roundTop(x, y, w, h) {
+    if (h <= 0) return '';
+    const r = Math.min(4, w / 2, h);
+    return `M${x},${y + h}V${y + r}Q${x},${y} ${x + r},${y}H${x + w - r}Q${x + w},${y} ${x + w},${y + r}V${y + h}Z`;
+  }
+  function barChart(el, months, series, opts = {}) {
+    const W = 340, H = 180, L = 34, R = 4, T = 10, B = 24;
+    const all = series.flatMap(s => s.values);
+    const max = niceMax(Math.max(...all, opts.avg || 0));
+    const cw = (W - L - R) / months.length;
+    const n = series.length, gap = 2;
+    const bw = Math.min(16, (cw * 0.62 - gap * (n - 1)) / n);
+    const gw = bw * n + gap * (n - 1);
+    const y = v => T + (H - T - B) * (1 - v / max);
+    let g = '';
+    for (let i = 0; i <= 4; i++) {
+      const v = max * i / 4, yy = y(v).toFixed(1);
+      g += `<line x1="${L}" x2="${W - R}" y1="${yy}" y2="${yy}" stroke="var(--grid)" stroke-width="1"/>`;
+      g += `<text x="${L - 6}" y="${+yy + 4}" text-anchor="end" font-size="10" fill="var(--muted)">${compact(v)}</text>`;
+    }
+    let bars = '', labels = '', hits = '';
+    months.forEach((m, i) => {
+      const cx = L + cw * i + cw / 2;
+      const isSel = m === view;
+      hits += `<rect class="hl" data-i="${i}" x="${L + cw * i + 1}" y="${T}" width="${cw - 2}" height="${H - T - B}" rx="6" fill="var(--chip)" opacity="0"/>`;
+      series.forEach((s, k) => {
+        const v = s.values[i], x = cx - gw / 2 + k * (bw + gap), top = y(v);
+        bars += `<path d="${roundTop(x, top, bw, y(0) - top)}" fill="${s.color}"/>`;
+      });
+      labels += `<text x="${cx}" y="${H - 7}" text-anchor="middle" font-size="11" fill="${isSel ? 'var(--text)' : 'var(--muted)'}" font-weight="${isSel ? 700 : 400}">${shortM(m)}</text>`;
+    });
+    let avg = '';
+    if (opts.avg) {
+      const ya = y(opts.avg).toFixed(1);
+      avg = `<line x1="${L}" x2="${W - R}" y1="${ya}" y2="${ya}" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="4 4"/>
+        <text x="${W - R}" y="${+ya - 5}" text-anchor="end" font-size="10" fill="var(--muted)">avg ${compact(opts.avg)}</text>`;
+    }
+    const baseline = `<line x1="${L}" x2="${W - R}" y1="${y(0)}" y2="${y(0)}" stroke="var(--muted)" stroke-opacity=".5" stroke-width="1"/>`;
+    const capt = series.map(s => s.name).join(' and ') + ' by month';
+    el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${capt}">${g}<g>${hits}</g>${bars}${baseline}${avg}${labels}
+      <g>${months.map((_, i) => `<rect data-i="${i}" x="${L + cw * i}" y="0" width="${cw}" height="${H}" fill="transparent" style="cursor:pointer"/>`).join('')}</g></svg>
+      <div class="tip hidden"></div>
+      <details class="tbl"><summary>Show as table</summary><table><tr><th>Month</th>${series.map(s => `<th>${s.name}</th>`).join('')}</tr>
+      ${months.map((m, i) => `<tr><td>${mkName(m, { month: 'short', year: 'numeric' })}</td>${series.map(s => `<td class="num">${fmt(s.values[i])}</td>`).join('')}</tr>`).join('')}</table></details>`;
+
+    const tip = el.querySelector('.tip'), hls = el.querySelectorAll('.hl');
+    const show = i => {
+      hls.forEach((h, j) => h.setAttribute('opacity', j === i ? '1' : '0'));
+      tip.innerHTML = `<b>${mkName(months[i])}</b>` + series.map(s =>
+        `<div class="r"><span class="sw" style="background:${s.color}"></span>${s.name}: <b class="num">${fmt(s.values[i])}</b></div>`).join('');
+      tip.classList.remove('hidden');
+      const pctX = (L + cw * i + cw / 2) / W * 100;
+      tip.style.left = `clamp(80px, ${pctX}%, calc(100% - 80px))`;
+      tip.style.top = '-8px';
+      tip.style.transform = 'translate(-50%, -100%)';
+    };
+    const hide = () => { tip.classList.add('hidden'); hls.forEach(h => h.setAttribute('opacity', '0')); };
+    el.querySelectorAll('svg > g:last-of-type rect').forEach(r => {
+      r.addEventListener('pointerenter', () => show(+r.dataset.i));
+      r.addEventListener('pointerdown', () => show(+r.dataset.i));
+    });
+    el.querySelector('svg').addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') hide(); });
+    el._hide = hide;
+  }
+  document.addEventListener('pointerdown', e => {
+    document.querySelectorAll('.chart').forEach(c => { if (!c.contains(e.target) && c._hide) c._hide(); });
+  });
+
+  // =============== Sheets ===============
+  function openSheet(n) { $(n + 'Backdrop').classList.remove('hidden'); $(n + 'Sheet').classList.remove('hidden'); }
+  function closeSheet(n) { $(n + 'Backdrop').classList.add('hidden'); $(n + 'Sheet').classList.add('hidden'); }
+  ['tx', 'budget', 'menu'].forEach(n => $(n + 'Backdrop').onclick = () => closeSheet(n));
+  document.addEventListener('click', e => { const c = e.target.closest('[data-close]'); if (c) closeSheet(c.dataset.close); });
+  $('menuBtn').onclick = () => {
+    $('openSheetBtn').classList.toggle('hidden', !store.get('wally_sheet_url', ''));
+    openSheet('menu');
+  };
+  $('openSheetBtn').onclick = () => { const u = store.get('wally_sheet_url', ''); if (u) window.open(u, '_blank', 'noopener'); };
+  $('logoutBtn').onclick = () => logout();
+
+  // =============== Toast ===============
+  let toastTimer;
+  function toast(a) {
+    const t = $('toast');
+    t.className = 'toast ' + (a.st.level === 2 ? 'crit' : '');
+    t.innerHTML = `<b>${a.st.icon} ${esc(a.title)}</b>${esc(a.text)}`;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.classList.add('hidden'), 5000);
+  }
+  $('toast').onclick = () => $('toast').classList.add('hidden');
+
+  // =============== Add / edit transaction ===============
+  let editId = null, curType = 'expense', curCat = null;
+  function drawChips() {
+    $('typeSeg').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.type === curType));
+    $('catChips').innerHTML = CATS[curType].map(c =>
+      `<button type="button" class="${c.name === curCat ? 'on' : ''}" data-cat="${esc(c.name)}">${c.icon} ${esc(c.name)}</button>`).join('');
+  }
+  $('typeSeg').onclick = e => { const b = e.target.closest('button'); if (b) { curType = b.dataset.type; curCat = null; drawChips(); } };
+  $('catChips').onclick = e => { const b = e.target.closest('button'); if (b) { curCat = b.dataset.cat; drawChips(); } };
+
+  function openTx(id) {
+    editId = id || null;
+    const t = id ? getTx().find(x => x.id === id) : null;
+    curType = t ? t.type : 'expense';
+    curCat = t ? t.category : null;
+    $('amount').value = t ? t.amount.toFixed(2) : '';
+    $('date').value = t ? t.date : (view === today().slice(0, 7) ? today() : view + '-01');
+    $('note').value = t ? (t.note || '') : '';
+    $('txTitle').textContent = t ? 'Edit transaction' : 'Add transaction';
+    $('delBtn').classList.toggle('hidden', !t);
+    $('txErr').textContent = '';
+    drawChips();
+    openSheet('tx');
+  }
+  $('addBtn').onclick = () => openTx();
+
+  function budgetLevels(list, mk, cat) {
+    const b = getBudget(), s = stats(list, mk);
+    return {
+      total: b.total ? status(s.exp, b.total).level : 0,
+      cat: b.cats[cat] ? status(s.byCat[cat] || 0, b.cats[cat]).level : 0,
+    };
+  }
+
+  $('txForm').onsubmit = e => {
+    e.preventDefault();
+    const amount = parseMoney($('amount').value);
+    if (!(amount > 0)) { $('txErr').textContent = 'Enter an amount above 0.'; return; }
+    if (!curCat) { $('txErr').textContent = 'Pick a category.'; return; }
+    if (!$('date').value) { $('txErr').textContent = 'Pick a date.'; return; }
+    const list = getTx();
+    const data = { type: curType, amount, category: curCat, date: $('date').value, note: $('note').value.trim() };
+    const mk = data.date.slice(0, 7);
+    const before = budgetLevels(list, mk, data.category);
+    const old = editId ? rawTx().find(x => x.id === editId) : null;
+    if (!upsertTx(old ? { ...old, ...data } : { id: uid(), created: Date.now(), ...data })) return;
+    list.splice(0, list.length, ...getTx());
+    view = mk;
+    closeSheet('tx');
+    render();
+
+    // overspending alerts: only when this save pushed a budget into a worse state
+    if (data.type === 'expense') {
+      const after = budgetLevels(list, mk, data.category);
+      const ctx = budgetCtx(list, getBudget());
+      const catIcon = iconFor('expense', data.category);
+      let pick = null;
+      if (after.cat > before.cat) pick = ctx.alerts.find(a => a.title.startsWith(catIcon + ' ' + data.category));
+      if (after.total > before.total && (!pick || after.total > after.cat)) pick = ctx.alerts.find(a => a.title.includes('monthly budget')) || pick;
+      if (pick) toast(pick);
+    }
+  };
+
+  $('delBtn').onclick = () => {
+    if (!confirm('Delete this transaction?')) return;
+    deleteTx(editId);
+    closeSheet('tx');
+    render();
+  };
+
+  // =============== Backup / restore / CSV ===============
+  function download(name, text, type) {
+    const blob = new Blob([text], { type });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  }
+  $('exportBtn').onclick = () => download(`wally-backup-${user}-${today()}.json`,
+    JSON.stringify({ app: 'wally', version: 2, transactions: getTx(), budget: getBudget() }, null, 2), 'application/json');
+  $('csvBtn').onclick = () => {
+    const rows = [['Date', 'Type', 'Category', 'Amount (RM)', 'Note']]
+      .concat(getTx().sort((a, b) => a.date.localeCompare(b.date)).map(t => [t.date, t.type, t.category, t.amount.toFixed(2), t.note || '']));
+    download(`wally-${user}-${today()}.csv`, '﻿' + rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n'), 'text/csv');
+  };
+  $('importBtn').onclick = () => $('importFile').click();
+  $('importFile').onchange = async e => {
+    const f = e.target.files[0]; e.target.value = '';
+    if (!f) return;
+    try {
+      const data = JSON.parse(await f.text());
+      const incoming = Array.isArray(data) ? data : data.transactions;
+      if (!Array.isArray(incoming)) throw 0;
+      const valid = incoming.filter(t => t && /^[a-z0-9]{6,40}$/i.test(t.id) && (t.type === 'income' || t.type === 'expense') && t.amount > 0 && t.category && /^\d{4}-\d{2}-\d{2}$/.test(t.date));
+      const ids = new Set(rawTx().map(t => t.id));
+      const added = valid.filter(t => !ids.has(t.id));
+      if (added.length) addTxs(added);
+      let msg = `Restored ${added.length} transaction(s).` + (valid.length - added.length ? ` ${valid.length - added.length} already existed.` : '');
+      if (data.budget && typeof data.budget === 'object') { saveBudget({ total: +data.budget.total || 0, cats: data.budget.cats || {} }); msg += ' Budgets restored.'; }
+      alert(msg);
+      closeSheet('menu'); render();
+    } catch { alert('That file is not a valid backup.'); }
+  };
+
+  // =============== Start ===============
+  setTab(tab);
+  let saved = store.get('wally_session', null);
+  if (!saved) { try { saved = JSON.parse(ss.get('wally_session') || 'null'); } catch {} }
+  if (!apiUrl()) showView('setupView');
+  else if (saved && saved.user && saved.token) login(saved);
+  else { showView('authView'); setAuthMode(!store.get('wally_last_user', '')); }
+
+  if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(() => {});
+})();
+</script>
+</body>
+</html>
